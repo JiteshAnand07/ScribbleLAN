@@ -2,21 +2,16 @@
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
-const { Server } = require("socket.io");
 
+const { Server } = require("socket.io");
 const registerSocketHandlers = require("./socketHandlers");
 
 // Create Express application
 const app = express();
 
-// Allowed frontend origins
-const allowedOrigins = [
-  "http://localhost:5173",
-  "http://127.0.0.1:5173"
-];
-
+// Allow frontend clients during LAN development
 app.use(cors({
-  origin: allowedOrigins
+  origin: true
 }));
 
 app.use(express.json());
@@ -27,19 +22,17 @@ const httpServer = http.createServer(app);
 // Initialize Socket.IO
 const io = new Server(httpServer, {
   cors: {
-    origin: allowedOrigins,
+    origin: true,
     methods: ["GET", "POST"]
   }
 });
 
 // Health check
 app.get("/health", (req, res) => {
-
   res.json({
     status: "success",
     message: "ScribbleLAN server is running!"
   });
-
 });
 
 // Register all Socket.IO event handlers
@@ -49,12 +42,10 @@ registerSocketHandlers(io);
 const PORT = process.env.PORT || 5000;
 
 httpServer.listen(PORT, "0.0.0.0", () => {
-
   console.log("----------------------------------");
   console.log("       SCRIBBLELAN SERVER");
   console.log("----------------------------------");
   console.log(`Server running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
   console.log("----------------------------------");
-
 });

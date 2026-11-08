@@ -1,6 +1,20 @@
 
 const gameManager = require("./gameManager");
 
+const {
+  createRoom,
+  joinRoom,
+  findPlayerRoom,
+  startGame,
+  removePlayer,
+  getPublicRoom,
+  updatePlayerSocket,
+  markPlayerDisconnected,
+  getRoom,
+  getPlayer
+} = require("./gameManager");
+
+
 function registerSocketHandlers(io) {
 
   io.on("connection", (socket) => {
@@ -240,6 +254,75 @@ function registerSocketHandlers(io) {
       }
 
     });
+
+    
+    // Receive a drawing segment and broadcast it to other players.
+    socket.on("DRAW_STROKE", (data) => {
+      const roomCode = socket.data.roomCode;
+      const playerId = socket.data.playerId;
+
+      if (!roomCode || !playerId || !data) return;
+
+      const room = getRoom(roomCode);
+      const player = getPlayer(roomCode, playerId);
+
+      // Only valid players in an active game can draw.
+      if (!room || !player || room.status !== "playing") return;
+
+      const { color, width, tool, points } = data;
+
+      // Validate drawing data.
+      if (
+        typeof color !== "string" ||
+        !/^#[0-9a-fA-F]{6}$/.test(color) ||
+        !Number.isFinite(width) ||
+        width < 1 ||
+        width > 30 ||
+        !["brush", "eraser"].includes(tool) ||
+        !Array.isArray(points) ||
+        points.length < 1 ||
+        points.length > 2
+      ) {
+        return;
+      }
+
+      const validPoints = points.every(
+        (point) =>
+          point &&
+          Number.isFinite(point.x) &&
+          Number.isFinite(point.y) &&
+          point.x >= 0 &&
+          point.x <= 1 &&
+          point.y >= 0 &&
+          point.y <= 1
+      );
+
+      if (!validPoints) return;
+
+      // Send to everyone in the room except the sender.
+      socket.to(roomCode).emit("DRAW_STROKE", {
+        color,
+        width,
+        tool,
+        points
+      });
+    });
+
+    // Clear the canvas for everyone in the room.
+    socket.on("CLEAR_CANVAS", () => {
+      const roomCode = socket.data.roomCode;
+      const playerId = socket.data.playerId;
+
+      if (!roomCode || !playerId) return;
+
+      const room = getRoom(roomCode);
+      const player = getPlayer(roomCode, playerId);
+
+      if (!room || !player || room.status !== "playing") return;
+
+      socket.to(roomCode).emit("CANVAS_CLEARED");
+    });
+
 
     // LEAVE ROOM
     socket.on("LEAVE_ROOM", (data, callback) => {

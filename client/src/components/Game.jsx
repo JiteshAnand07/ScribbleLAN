@@ -1,6 +1,7 @@
 
 import { useEffect, useState } from "react";
 import DrawingCanvas from "./DrawingCanvas";
+import { socket } from "../socket";
 
 function Game({ playerName, roomCode, onEndGame }) {
   const [timeLeft, setTimeLeft] = useState(60);
@@ -10,6 +11,9 @@ function Game({ playerName, roomCode, onEndGame }) {
     { name: "Player 2", text: "Is it an animal?" },
     { name: "Player 3", text: "Maybe a vehicle!" }
   ]);
+
+  const [remoteStrokes, setRemoteStrokes] = useState([]);
+  const [clearSignal, setClearSignal] = useState(0);
 
   const players = [
     { name: playerName, score: 100 },
@@ -27,6 +31,43 @@ function Game({ playerName, roomCode, onEndGame }) {
     return () => clearInterval(timer);
   }, [timeLeft]);
 
+  // Receive drawing segments and clear events from the server.
+  useEffect(() => {
+    const handleRemoteStroke = (stroke) => {
+      setRemoteStrokes((previous) => [...previous, stroke]);
+    };
+
+    const handleCanvasCleared = () => {
+      setRemoteStrokes([]);
+      setClearSignal((previous) => previous + 1);
+    };
+
+    socket.on("DRAW_STROKE", handleRemoteStroke);
+    socket.on("CANVAS_CLEARED", handleCanvasCleared);
+
+    return () => {
+      socket.off("DRAW_STROKE", handleRemoteStroke);
+      socket.off("CANVAS_CLEARED", handleCanvasCleared);
+    };
+  }, []);
+
+  // Send each drawing segment to the backend.
+  const handleStroke = (stroke) => {
+    if (!socket.connected) {
+      console.warn("Cannot send drawing: socket is disconnected");
+      return;
+    }
+
+    socket.emit("DRAW_STROKE", stroke);
+  };
+
+  // Tell other players to clear their canvases.
+  const handleClearCanvas = () => {
+    if (socket.connected) {
+      socket.emit("CLEAR_CANVAS");
+    }
+  };
+
   const submitGuess = (event) => {
     event.preventDefault();
 
@@ -38,15 +79,6 @@ function Game({ playerName, roomCode, onEndGame }) {
     ]);
 
     setGuess("");
-  };
-
-  // Prepared for real-time drawing synchronization in Phase 5.
-  const handleStroke = (stroke) => {
-    console.log("Completed drawing stroke:", stroke);
-  };
-
-  const handleClearCanvas = () => {
-    console.log("Canvas cleared");
   };
 
   return (
@@ -79,11 +111,13 @@ function Game({ playerName, roomCode, onEndGame }) {
             disabled={false}
             onStroke={handleStroke}
             onClear={handleClearCanvas}
+            remoteStrokes={remoteStrokes}
+            clearSignal={clearSignal}
           />
 
           <div className="game-hint">
-            This is a sample round. Multiplayer drawing
-            synchronization will be added in Phase 5.
+            Drawing strokes are synchronized with other players
+            in this room using Socket.IO.
           </div>
         </section>
 

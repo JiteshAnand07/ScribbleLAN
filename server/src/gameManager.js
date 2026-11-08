@@ -261,10 +261,9 @@ module.exports = {
   findPlayerRoom,
   startGame,
   removePlayer,
+  getPublicRoom,
   getRoom,
   getPlayer,
   updatePlayerSocket,
-  markPlayerDisconnected,
-  getPublicRoom
+  markPlayerDisconnected
 };
-

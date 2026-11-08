@@ -4,19 +4,21 @@ import { useEffect, useRef, useState } from "react";
 function DrawingCanvas({
   disabled = false,
   onStroke,
-  onClear
+  onClear,
+  remoteStrokes = [],
+  clearSignal = 0
 }) {
   const canvasRef = useRef(null);
   const isDrawing = useRef(false);
   const currentStroke = useRef(null);
   const strokes = useRef([]);
+  const remoteIndex = useRef(0);
 
   const [color, setColor] = useState("#222222");
   const [brushSize, setBrushSize] = useState(5);
   const [tool, setTool] = useState("brush");
   const [strokeCount, setStrokeCount] = useState(0);
 
-  // Redraw all saved strokes on the canvas.
   const redrawCanvas = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -32,28 +34,24 @@ function DrawingCanvas({
       const points = stroke.points;
       if (!points || points.length === 0) return;
 
+      const scale = canvas.width / rect.width;
+
       ctx.beginPath();
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
-      ctx.strokeStyle = stroke.tool === "eraser"
-        ? "#ffffff"
-        : stroke.color;
-      ctx.lineWidth = stroke.width * (canvas.width / rect.width);
+      ctx.strokeStyle =
+        stroke.tool === "eraser" ? "#ffffff" : stroke.color;
+      ctx.fillStyle =
+        stroke.tool === "eraser" ? "#ffffff" : stroke.color;
+      ctx.lineWidth = stroke.width * scale;
 
       const first = points[0];
-      ctx.moveTo(
-        first.x * canvas.width,
-        first.y * canvas.height
-      );
+      ctx.moveTo(first.x * canvas.width, first.y * canvas.height);
 
       points.slice(1).forEach((point) => {
-        ctx.lineTo(
-          point.x * canvas.width,
-          point.y * canvas.height
-        );
+        ctx.lineTo(point.x * canvas.width, point.y * canvas.height);
       });
 
-      // Display a dot when the stroke contains only one point.
       if (points.length === 1) {
         ctx.lineTo(
           first.x * canvas.width + 0.1,
@@ -62,10 +60,23 @@ function DrawingCanvas({
       }
 
       ctx.stroke();
+
+      if (points.length === 1) {
+        ctx.beginPath();
+        ctx.arc(
+          first.x * canvas.width,
+          first.y * canvas.height,
+          (stroke.width * scale) / 2,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+      }
     });
+
+    setStrokeCount(strokes.current.length);
   };
 
-  // Set the canvas resolution and redraw after resizing.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -82,11 +93,35 @@ function DrawingCanvas({
 
     const observer = new ResizeObserver(resizeCanvas);
     observer.observe(canvas);
-
     resizeCanvas();
 
     return () => observer.disconnect();
   }, []);
+
+  // Add newly received remote drawing segments.
+  useEffect(() => {
+    if (remoteStrokes.length < remoteIndex.current) {
+      remoteIndex.current = 0;
+    }
+
+    for (let i = remoteIndex.current; i < remoteStrokes.length; i++) {
+      strokes.current.push(remoteStrokes[i]);
+    }
+
+    remoteIndex.current = remoteStrokes.length;
+
+    if (remoteStrokes.length > 0) {
+      redrawCanvas();
+    }
+  }, [remoteStrokes]);
+
+  // Clear this canvas when another player clears the room canvas.
+  useEffect(() => {
+    strokes.current = [];
+    remoteIndex.current = 0;
+    setStrokeCount(0);
+    redrawCanvas();
+  }, [clearSignal]);
 
   const getPosition = (event) => {
     const canvas = canvasRef.current;
@@ -117,20 +152,30 @@ function DrawingCanvas({
       points: [point]
     };
 
-    // Draw the initial point immediately.
     const ctx = canvas.getContext("2d");
     const rect = canvas.getBoundingClientRect();
+    const scale = canvas.width / rect.width;
 
     ctx.beginPath();
     ctx.fillStyle = tool === "eraser" ? "#ffffff" : color;
     ctx.arc(
       point.x * canvas.width,
       point.y * canvas.height,
-      (brushSize * (canvas.width / rect.width)) / 2,
+      (brushSize * scale) / 2,
       0,
       Math.PI * 2
     );
     ctx.fill();
+
+    // Send the starting point immediately.
+    if (onStroke) {
+      onStroke({
+        color,
+        width: brushSize,
+        tool,
+        points: [point]
+      });
+    }
   };
 
   const draw = (event) => {
@@ -158,9 +203,10 @@ function DrawingCanvas({
       newPoint.y * canvas.height
     );
 
-    ctx.strokeStyle = currentStroke.current.tool === "eraser"
-      ? "#ffffff"
-      : currentStroke.current.color;
+    ctx.strokeStyle =
+      currentStroke.current.tool === "eraser"
+        ? "#ffffff"
+        : currentStroke.current.color;
 
     ctx.lineWidth =
       currentStroke.current.width * (canvas.width / rect.width);
@@ -168,6 +214,16 @@ function DrawingCanvas({
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.stroke();
+
+    // Send only the latest segment, not the entire drawing.
+    if (onStroke) {
+      onStroke({
+        color: currentStroke.current.color,
+        width: currentStroke.current.width,
+        tool: currentStroke.current.tool,
+        points: [previousPoint, newPoint]
+      });
+    }
   };
 
   const stopDrawing = (event) => {
@@ -182,15 +238,8 @@ function DrawingCanvas({
     }
 
     if (currentStroke.current) {
-      const completedStroke = currentStroke.current;
-
-      strokes.current.push(completedStroke);
+      strokes.current.push(currentStroke.current);
       setStrokeCount(strokes.current.length);
-
-      // This callback will be connected to Socket.IO in Phase 5.
-      if (onStroke) {
-        onStroke(completedStroke);
-      }
     }
 
     currentStroke.current = null;
@@ -200,7 +249,6 @@ function DrawingCanvas({
     if (disabled || strokes.current.length === 0) return;
 
     strokes.current.pop();
-    setStrokeCount(strokes.current.length);
     redrawCanvas();
   };
 
@@ -208,12 +256,11 @@ function DrawingCanvas({
     if (disabled) return;
 
     strokes.current = [];
+    remoteIndex.current = remoteStrokes.length;
     setStrokeCount(0);
     redrawCanvas();
 
-    if (onClear) {
-      onClear();
-    }
+    if (onClear) onClear();
   };
 
   const downloadDrawing = () => {
@@ -241,9 +288,7 @@ function DrawingCanvas({
         </div>
 
         <div className="drawing-control">
-          <label htmlFor="brush-size">
-            Size: {brushSize}px
-          </label>
+          <label htmlFor="brush-size">Size: {brushSize}px</label>
           <input
             id="brush-size"
             type="range"

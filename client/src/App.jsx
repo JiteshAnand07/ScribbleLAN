@@ -10,6 +10,31 @@ import { socket } from "./socket";
 
 import "./App.css";
 
+
+function generatePlayerId() {
+  // Preferred method for secure browser contexts.
+  if (window.crypto && window.crypto.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+
+  // Fallback for browsers accessing the application over LAN HTTP.
+  if (window.crypto && window.crypto.getRandomValues) {
+    const bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+
+    return Array.from(bytes)
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  // Last-resort fallback.
+  return (
+    Date.now().toString(36) +
+    Math.random().toString(36).substring(2)
+  );
+}
+
+
 function App() {
 
   const [page, setPage] = useState("home");
@@ -29,7 +54,7 @@ function App() {
     let id = localStorage.getItem("scribblelan_player_id");
 
     if (!id) {
-      id = crypto.randomUUID();
+      id = generatePlayerId();
 
       localStorage.setItem(
         "scribblelan_player_id",
