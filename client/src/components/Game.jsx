@@ -3,9 +3,9 @@ import { useEffect, useState } from "react";
 import DrawingCanvas from "./DrawingCanvas";
 
 function Game({ playerName, roomCode, onEndGame }) {
-
   const [timeLeft, setTimeLeft] = useState(60);
   const [guess, setGuess] = useState("");
+
   const [messages, setMessages] = useState([
     { name: "Player 2", text: "Is it an animal?" },
     { name: "Player 3", text: "Maybe a vehicle!" }
@@ -40,11 +40,18 @@ function Game({ playerName, roomCode, onEndGame }) {
     setGuess("");
   };
 
+  // Prepared for real-time drawing synchronization in Phase 5.
+  const handleStroke = (stroke) => {
+    console.log("Completed drawing stroke:", stroke);
+  };
+
+  const handleClearCanvas = () => {
+    console.log("Canvas cleared");
+  };
+
   return (
     <div className="game-page">
-
       <header className="game-header">
-
         <div>
           <h2>ScribbleLAN</h2>
           <span>Room: {roomCode}</span>
@@ -58,32 +65,30 @@ function Game({ playerName, roomCode, onEndGame }) {
         <button className="leave-btn" onClick={onEndGame}>
           End Game
         </button>
-
       </header>
 
       <main className="game-layout">
-
         <section className="canvas-section">
-
           <div className="game-instruction">
             <span>🎨</span>
             <strong>Player 1 is drawing!</strong>
             <span>Guess the word</span>
           </div>
 
-          <DrawingCanvas />
+          <DrawingCanvas
+            disabled={false}
+            onStroke={handleStroke}
+            onClear={handleClearCanvas}
+          />
 
           <div className="game-hint">
-            This is a sample round. Multiplayer synchronization
-            will be added in the networking phase.
+            This is a sample round. Multiplayer drawing
+            synchronization will be added in Phase 5.
           </div>
-
         </section>
 
         <aside className="game-sidebar">
-
           <div className="sidebar-card">
-
             <h3>🏆 Leaderboard</h3>
 
             {players.map((player, index) => (
@@ -95,11 +100,9 @@ function Game({ playerName, roomCode, onEndGame }) {
                 <strong>{player.score}</strong>
               </div>
             ))}
-
           </div>
 
           <div className="sidebar-card chat-card">
-
             <h3>💬 Guesses</h3>
 
             <div className="chat-messages">
@@ -112,7 +115,6 @@ function Game({ playerName, roomCode, onEndGame }) {
             </div>
 
             <form onSubmit={submitGuess} className="guess-form">
-
               <input
                 type="text"
                 placeholder="Type your guess..."
@@ -121,15 +123,10 @@ function Game({ playerName, roomCode, onEndGame }) {
               />
 
               <button type="submit">Send</button>
-
             </form>
-
           </div>
-
         </aside>
-
       </main>
-
     </div>
   );
 }

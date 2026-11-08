@@ -1,34 +1,91 @@
 
 import { useEffect, useRef, useState } from "react";
 
-function DrawingCanvas() {
-
+function DrawingCanvas({
+  disabled = false,
+  onStroke,
+  onClear
+}) {
   const canvasRef = useRef(null);
   const isDrawing = useRef(false);
+  const currentStroke = useRef(null);
+  const strokes = useRef([]);
 
-  const [color, setColor] = useState("#000000");
+  const [color, setColor] = useState("#222222");
   const [brushSize, setBrushSize] = useState(5);
-  const [eraser, setEraser] = useState(false);
+  const [tool, setTool] = useState("brush");
+  const [strokeCount, setStrokeCount] = useState(0);
 
-  const colors = [
-    "#000000",
-    "#ef4444",
-    "#2563eb",
-    "#16a34a",
-    "#eab308",
-    "#a855f7",
-    "#ec4899",
-    "#f97316"
-  ];
+  // Redraw all saved strokes on the canvas.
+  const redrawCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
+    const ctx = canvas.getContext("2d");
+    const rect = canvas.getBoundingClientRect();
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    strokes.current.forEach((stroke) => {
+      const points = stroke.points;
+      if (!points || points.length === 0) return;
+
+      ctx.beginPath();
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = stroke.tool === "eraser"
+        ? "#ffffff"
+        : stroke.color;
+      ctx.lineWidth = stroke.width * (canvas.width / rect.width);
+
+      const first = points[0];
+      ctx.moveTo(
+        first.x * canvas.width,
+        first.y * canvas.height
+      );
+
+      points.slice(1).forEach((point) => {
+        ctx.lineTo(
+          point.x * canvas.width,
+          point.y * canvas.height
+        );
+      });
+
+      // Display a dot when the stroke contains only one point.
+      if (points.length === 1) {
+        ctx.lineTo(
+          first.x * canvas.width + 0.1,
+          first.y * canvas.height + 0.1
+        );
+      }
+
+      ctx.stroke();
+    });
+  };
+
+  // Set the canvas resolution and redraw after resizing.
   useEffect(() => {
     const canvas = canvasRef.current;
-    const context = canvas.getContext("2d");
+    if (!canvas) return;
 
-    context.lineCap = "round";
-    context.lineJoin = "round";
+    const resizeCanvas = () => {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
 
-    context.clearRect(0, 0, canvas.width, canvas.height);
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+
+      redrawCanvas();
+    };
+
+    const observer = new ResizeObserver(resizeCanvas);
+    observer.observe(canvas);
+
+    resizeCanvas();
+
+    return () => observer.disconnect();
   }, []);
 
   const getPosition = (event) => {
@@ -36,117 +93,229 @@ function DrawingCanvas() {
     const rect = canvas.getBoundingClientRect();
 
     return {
-      x: (event.clientX - rect.left) * (canvas.width / rect.width),
-      y: (event.clientY - rect.top) * (canvas.height / rect.height)
+      x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))
     };
   };
 
   const startDrawing = (event) => {
+    if (disabled || event.button !== 0) return;
+
+    event.preventDefault();
+
     const canvas = canvasRef.current;
-    const context = canvas.getContext("2d");
+    canvas.setPointerCapture(event.pointerId);
 
     isDrawing.current = true;
 
-    canvas.setPointerCapture(event.pointerId);
+    const point = getPosition(event);
 
-    const pos = getPosition(event);
+    currentStroke.current = {
+      color,
+      width: brushSize,
+      tool,
+      points: [point]
+    };
 
-    context.beginPath();
-    context.moveTo(pos.x, pos.y);
+    // Draw the initial point immediately.
+    const ctx = canvas.getContext("2d");
+    const rect = canvas.getBoundingClientRect();
+
+    ctx.beginPath();
+    ctx.fillStyle = tool === "eraser" ? "#ffffff" : color;
+    ctx.arc(
+      point.x * canvas.width,
+      point.y * canvas.height,
+      (brushSize * (canvas.width / rect.width)) / 2,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
   };
 
   const draw = (event) => {
-    if (!isDrawing.current) return;
+    if (!isDrawing.current || !currentStroke.current) return;
+
+    event.preventDefault();
 
     const canvas = canvasRef.current;
-    const context = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d");
+    const rect = canvas.getBoundingClientRect();
 
-    const pos = getPosition(event);
+    const newPoint = getPosition(event);
+    const points = currentStroke.current.points;
+    const previousPoint = points[points.length - 1];
 
-    context.strokeStyle = eraser ? "#ffffff" : color;
-    context.lineWidth = brushSize;
+    points.push(newPoint);
 
-    context.lineTo(pos.x, pos.y);
-    context.stroke();
+    ctx.beginPath();
+    ctx.moveTo(
+      previousPoint.x * canvas.width,
+      previousPoint.y * canvas.height
+    );
+    ctx.lineTo(
+      newPoint.x * canvas.width,
+      newPoint.y * canvas.height
+    );
+
+    ctx.strokeStyle = currentStroke.current.tool === "eraser"
+      ? "#ffffff"
+      : currentStroke.current.color;
+
+    ctx.lineWidth =
+      currentStroke.current.width * (canvas.width / rect.width);
+
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.stroke();
   };
 
-  const stopDrawing = () => {
+  const stopDrawing = (event) => {
+    if (!isDrawing.current) return;
+
     isDrawing.current = false;
 
     const canvas = canvasRef.current;
-    canvas.getContext("2d").closePath();
+
+    if (event && canvas.hasPointerCapture(event.pointerId)) {
+      canvas.releasePointerCapture(event.pointerId);
+    }
+
+    if (currentStroke.current) {
+      const completedStroke = currentStroke.current;
+
+      strokes.current.push(completedStroke);
+      setStrokeCount(strokes.current.length);
+
+      // This callback will be connected to Socket.IO in Phase 5.
+      if (onStroke) {
+        onStroke(completedStroke);
+      }
+    }
+
+    currentStroke.current = null;
+  };
+
+  const undo = () => {
+    if (disabled || strokes.current.length === 0) return;
+
+    strokes.current.pop();
+    setStrokeCount(strokes.current.length);
+    redrawCanvas();
   };
 
   const clearCanvas = () => {
-    const canvas = canvasRef.current;
-    const context = canvas.getContext("2d");
+    if (disabled) return;
 
-    context.clearRect(0, 0, canvas.width, canvas.height);
+    strokes.current = [];
+    setStrokeCount(0);
+    redrawCanvas();
+
+    if (onClear) {
+      onClear();
+    }
+  };
+
+  const downloadDrawing = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const link = document.createElement("a");
+    link.download = "scribblelan-drawing.png";
+    link.href = canvas.toDataURL("image/png");
+    link.click();
   };
 
   return (
-    <div className="drawing-area">
-
+    <div className="drawing-tool">
       <div className="drawing-toolbar">
-
-        <div className="color-palette">
-          {colors.map((item) => (
-            <button
-              key={item}
-              className={`color-option ${
-                color === item && !eraser ? "selected" : ""
-              }`}
-              style={{ background: item }}
-              onClick={() => {
-                setColor(item);
-                setEraser(false);
-              }}
-              title={item}
-            />
-          ))}
+        <div className="drawing-control">
+          <label htmlFor="brush-color">Colour</label>
+          <input
+            id="brush-color"
+            type="color"
+            value={color}
+            disabled={disabled || tool === "eraser"}
+            onChange={(e) => setColor(e.target.value)}
+          />
         </div>
 
-        <div className="brush-controls">
-
-          <label>Brush Size</label>
-
+        <div className="drawing-control">
+          <label htmlFor="brush-size">
+            Size: {brushSize}px
+          </label>
           <input
+            id="brush-size"
             type="range"
             min="2"
-            max="20"
+            max="25"
             value={brushSize}
+            disabled={disabled}
             onChange={(e) => setBrushSize(Number(e.target.value))}
           />
-
-          <span>{brushSize}px</span>
-
         </div>
 
         <button
-          className={`tool-btn ${eraser ? "active-tool" : ""}`}
-          onClick={() => setEraser(true)}
+          type="button"
+          className={tool === "brush" ? "tool-button active" : "tool-button"}
+          disabled={disabled}
+          onClick={() => setTool("brush")}
+        >
+          Brush
+        </button>
+
+        <button
+          type="button"
+          className={tool === "eraser" ? "tool-button active" : "tool-button"}
+          disabled={disabled}
+          onClick={() => setTool("eraser")}
         >
           Eraser
         </button>
 
-        <button className="tool-btn" onClick={clearCanvas}>
+        <button
+          type="button"
+          className="tool-button"
+          disabled={disabled || strokeCount === 0}
+          onClick={undo}
+        >
+          Undo
+        </button>
+
+        <button
+          type="button"
+          className="tool-button"
+          disabled={disabled}
+          onClick={clearCanvas}
+        >
           Clear
         </button>
 
+        <button
+          type="button"
+          className="tool-button"
+          onClick={downloadDrawing}
+        >
+          Download
+        </button>
       </div>
 
-      <canvas
-        ref={canvasRef}
-        width={800}
-        height={450}
-        className="drawing-canvas"
-        onPointerDown={startDrawing}
-        onPointerMove={draw}
-        onPointerUp={stopDrawing}
-        onPointerCancel={stopDrawing}
-        onPointerLeave={stopDrawing}
-      />
+      <div className="drawing-canvas-wrapper">
+        <canvas
+          ref={canvasRef}
+          className="drawing-canvas"
+          onPointerDown={startDrawing}
+          onPointerMove={draw}
+          onPointerUp={stopDrawing}
+          onPointerCancel={stopDrawing}
+          onLostPointerCapture={stopDrawing}
+        />
+      </div>
 
+      <div className="drawing-footer">
+        <span>{strokeCount} strokes</span>
+        {disabled && <span>Drawing is currently disabled</span>}
+      </div>
     </div>
   );
 }
