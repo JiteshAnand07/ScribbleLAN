@@ -593,3 +593,54 @@ input {
     gap: 10px;
   }
 }
+
+
+
+/* =========================
+   SOCKET CONNECTION STATUS
+========================= */
+
+.connection-indicator {
+  position: fixed;
+  bottom: 15px;
+  right: 18px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  padding: 9px 14px;
+  border-radius: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.08);
+  z-index: 100;
+}
+
+.connection-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.connection-dot.connected {
+  background: #16a34a;
+}
+
+.connection-dot.disconnected {
+  background: #dc2626;
+}
+
+.offline-status {
+  color: #dc2626;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.waiting-message {
+  text-align: center;
+  color: #64748b;
+  font-size: 12px;
+  margin-top: 15px;
+}

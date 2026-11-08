@@ -1,16 +1,26 @@
 
-function Lobby({ playerName, roomCode, onStartGame, onLeave }) {
+function Lobby({
+  playerName,
+  roomCode,
+  players = [],
+  hostId,
+  currentPlayerId,
+  gameStatus,
+  onStartGame,
+  onLeave
+}) {
 
-  // Temporary players for frontend development
-  const players = [
-    { name: playerName, host: true, color: "#2563eb" },
-    { name: "Player 2", host: false, color: "#e879a0" },
-    { name: "Player 3", host: false, color: "#16a34a" }
-  ];
+  const isHost = hostId === currentPlayerId;
 
-  const copyRoomCode = () => {
-    navigator.clipboard.writeText(roomCode);
-    alert("Room code copied!");
+  const copyRoomCode = async () => {
+
+    try {
+      await navigator.clipboard.writeText(roomCode);
+      alert("Room code copied!");
+    } catch {
+      alert("Unable to copy room code.");
+    }
+
   };
 
   return (
@@ -21,56 +31,115 @@ function Lobby({ playerName, roomCode, onStartGame, onLeave }) {
         <h1>Game Lobby</h1>
 
         <p className="lobby-subtitle">
-          Waiting for players to join...
+          {gameStatus === "waiting"
+            ? "Waiting for players to join..."
+            : "Game has started!"}
         </p>
 
         <div className="room-code-box">
+
           <span>ROOM CODE</span>
 
           <div className="room-code">
             {roomCode}
           </div>
 
-          <button className="copy-btn" onClick={copyRoomCode}>
+          <button
+            className="copy-btn"
+            onClick={copyRoomCode}
+          >
             Copy Code
           </button>
+
         </div>
 
         <div className="player-section">
 
-          <h3>Players ({players.length}/4)</h3>
+          <h3>
+            Players ({players.length}/4)
+          </h3>
 
           {players.map((player, index) => (
-            <div className="player-item" key={index}>
+
+            <div className="player-item" key={player.id}>
 
               <div
                 className="player-avatar"
-                style={{ background: player.color }}
+                style={{
+                  background: [
+                    "#2563eb",
+                    "#e879a0",
+                    "#16a34a",
+                    "#9333ea"
+                  ][index % 4]
+                }}
               >
                 {player.name.charAt(0).toUpperCase()}
               </div>
 
               <div className="player-info">
-                <strong>{player.name}</strong>
-                {player.host && <span>Room Host</span>}
+
+                <strong>
+                  {player.name}
+                  {player.id === currentPlayerId && " (You)"}
+                </strong>
+
+                {player.isHost && (
+                  <span>Room Host</span>
+                )}
+
               </div>
 
-              <span className="online-status">
-                ● Online
+              <span
+                className={
+                  player.connected
+                    ? "online-status"
+                    : "offline-status"
+                }
+              >
+                ● {player.connected ? "Online" : "Offline"}
               </span>
 
             </div>
+
           ))}
+
+          {players.length < 4 && (
+            <p className="waiting-message">
+              Waiting for {4 - players.length} more player(s)...
+            </p>
+          )}
 
         </div>
 
         <div className="lobby-actions">
 
-          <button className="primary-btn" onClick={onStartGame}>
-            Start Game
-          </button>
+          {isHost && gameStatus === "waiting" && (
+            <button
+              className="primary-btn"
+              onClick={onStartGame}
+              disabled={players.length < 2}
+            >
+              Start Game
+            </button>
+          )}
 
-          <button className="leave-btn" onClick={onLeave}>
+          {!isHost && gameStatus === "waiting" && (
+            <p className="waiting-message">
+              Waiting for the host to start the game...
+            </p>
+          )}
+
+          {gameStatus === "playing" && (
+            <p className="waiting-message">
+              Game started!
+            </p>
+          )}
+
+          <button
+            className="leave-btn"
+            onClick={onLeave}
+          >
             Leave Room
           </button>
 
