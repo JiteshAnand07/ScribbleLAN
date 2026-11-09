@@ -747,3 +747,168 @@ input {
     gap: 8px;
   }
 }
+
+
+
+/* ================================
+   PHASE 6 - GAME LOGIC UI
+================================ */
+
+.game-word {
+  margin: 12px 0;
+  padding: 12px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: 5px;
+  color: #2563eb;
+  background: #eff6ff;
+  border-radius: 8px;
+}
+
+.round-result {
+  margin-top: 15px;
+  padding: 16px;
+  text-align: center;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 10px;
+}
+
+.round-result h3 {
+  margin-bottom: 8px;
+}
+
+.guess-error {
+  color: #dc2626;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.guess-form input:disabled {
+  background: #f3f4f6;
+  cursor: not-allowed;
+}
+
+.guess-form button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.game-result-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.game-result-card {
+  width: 100%;
+  max-width: 420px;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 25px;
+  background: white;
+  border-radius: 15px;
+  color: #222;
+}
+
+.game-result-card h2,
+.game-result-card h3 {
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+.game-result-card .score-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.game-result-card .leave-btn {
+  display: block;
+  width: 100%;
+  margin-top: 20px;
+}
+
+
+
+/* REMATCH INVITATION POPUP */
+
+.rematch-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.rematch-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 30px;
+  border-radius: 18px;
+  background: white;
+  text-align: center;
+  box-shadow: 0 15px 45px rgba(0, 0, 0, 0.2);
+}
+
+.rematch-icon {
+  font-size: 42px;
+  margin-bottom: 12px;
+}
+
+.rematch-card h2 {
+  color: #1e3a8a;
+  margin-bottom: 15px;
+}
+
+.rematch-card p {
+  color: #555;
+  line-height: 1.6;
+  margin-bottom: 15px;
+}
+
+.rematch-room {
+  padding: 10px;
+  background: #eff6ff;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.rematch-card button {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+}
+
+
+.rematch-player-status {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #2563eb;
+}
+
+.rematch-waiting {
+  margin: 12px 0;
+  text-align: center;
+  color: #d97706;
+  font-size: 13px;
+}
+
+.rematch-ready {
+  margin: 12px 0;
+  text-align: center;
+  color: #16a34a;
+  font-size: 13px;
+  font-weight: 600;
+}

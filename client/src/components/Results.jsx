@@ -1,11 +1,12 @@
 
-function Results({ onPlayAgain, onHome }) {
+function Results({ results, onPlayAgain, onHome }) {
 
-  const players = [
-    { name: "Player 2", score: 350 },
-    { name: "Player 1", score: 250 },
-    { name: "Player 3", score: 150 }
-  ];
+  // Get actual scores received from the backend.
+  const players = (results?.scores || [])
+    .slice()
+    .sort((a, b) => b.score - a.score);
+
+  const winner = players.length > 0 ? players[0] : null;
 
   return (
     <div className="results-page">
@@ -17,29 +18,51 @@ function Results({ onPlayAgain, onHome }) {
         <h1>Game Over!</h1>
 
         <p className="results-subtitle">
-          Congratulations to the winner!
+          {winner
+            ? "Congratulations to the winner!"
+            : "Final game results"}
         </p>
 
-        <div className="winner-box">
-          <span>🥇 WINNER</span>
-          <h2>{players[0].name}</h2>
-          <strong>{players[0].score} Points</strong>
-        </div>
+        {winner ? (
+          <>
+            <div className="winner-box">
+              <span>🥇 WINNER</span>
 
-        <h3>Final Leaderboard</h3>
+              <h2>{winner.name}</h2>
 
-        {players.map((player, index) => (
-          <div className="result-row" key={index}>
-            <span>{index + 1}. {player.name}</span>
-            <strong>{player.score} pts</strong>
-          </div>
-        ))}
+              <strong>{winner.score} Points</strong>
+            </div>
 
-        <button className="primary-btn" onClick={onPlayAgain}>
+            <h3>Final Leaderboard</h3>
+
+            {players.map((player, index) => (
+              <div className="result-row" key={player.id}>
+                <span>
+                  {index + 1}. {player.name}
+                </span>
+
+                <strong>{player.score} pts</strong>
+              </div>
+            ))}
+          </>
+        ) : (
+          <p className="results-subtitle">
+            Final scores are not available. Please check your
+            connection and try again.
+          </p>
+        )}
+
+        <button
+          className="primary-btn"
+          onClick={onPlayAgain}
+        >
           Play Again
         </button>
 
-        <button className="leave-btn" onClick={onHome}>
+        <button
+          className="leave-btn"
+          onClick={onHome}
+        >
           Back to Home
         </button>
 

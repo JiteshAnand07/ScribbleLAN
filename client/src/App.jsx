@@ -44,7 +44,8 @@ function App() {
 
   const [roomCode, setRoomCode] = useState("");
   const [room, setRoom] = useState(null);
-
+  const [finalResults, setFinalResults] = useState(null);
+  const [rematchInvite, setRematchInvite] = useState(null);
   const [connectionStatus, setConnectionStatus] =
     useState("Connecting...");
 
@@ -152,19 +153,45 @@ function App() {
     };
 
     const handleRoomUpdate = (updatedRoom) => {
-
       console.log("Room updated:", updatedRoom);
 
-      setRoom(updatedRoom);
-
+      // Accept only a valid public room object.
+      if (
+        updatedRoom &&
+        updatedRoom.roomCode &&
+        Array.isArray(updatedRoom.players)
+      ) {
+        setRoom(updatedRoom);
+        setRoomCode(updatedRoom.roomCode);
+      }
     };
 
     const handleGameStarted = () => {
       setPage("game");
     };
 
+    const handleRematchRequest = (request) => {
+      console.log("Rematch invitation received:", request);
+      setRematchInvite(request);
+    };
+
+    const handleReturnToLobby = (updatedRoom) => {
+      console.log("Returning to existing lobby:", updatedRoom.roomCode);
+
+      setRematchInvite(null);
+      setFinalResults(null);
+      setRoom(updatedRoom);
+      setRoomCode(updatedRoom.roomCode);
+      setPage("lobby");
+    };
+
     const handlePlayerDisconnected = (data) => {
       console.log("Player disconnected:", data.playerId);
+    };
+
+    const handleGameFinished = (results) => {
+      console.log("Final game results received:", results);
+      setFinalResults(results);
     };
 
     socket.on("connect", handleConnect);
@@ -173,11 +200,14 @@ function App() {
 
     socket.on("ROOM_UPDATE", handleRoomUpdate);
     socket.on("GAME_STARTED", handleGameStarted);
+    socket.on("REMATCH_REQUEST", handleRematchRequest);
+    socket.on("RETURN_TO_LOBBY", handleReturnToLobby);
 
     socket.on(
       "PLAYER_DISCONNECTED",
       handlePlayerDisconnected
     );
+    socket.on("GAME_FINISHED", handleGameFinished);
 
     socket.connect();
 
@@ -189,12 +219,14 @@ function App() {
 
       socket.off("ROOM_UPDATE", handleRoomUpdate);
       socket.off("GAME_STARTED", handleGameStarted);
+      socket.off("REMATCH_REQUEST", handleRematchRequest);
+      socket.off("RETURN_TO_LOBBY", handleReturnToLobby);
 
       socket.off(
         "PLAYER_DISCONNECTED",
         handlePlayerDisconnected
       );
-
+      socket.off("GAME_FINISHED", handleGameFinished);
       socket.disconnect();
 
     };
@@ -224,6 +256,7 @@ function App() {
       (error, response) => {
 
         if (error) {
+          console.error("Socket.IO request failed:", response);
           alert("Server did not respond. Please try again.");
           return;
         }
@@ -248,6 +281,7 @@ function App() {
         setPlayerName(name);
         setRoom(response.room);
         setRoomCode(response.room.roomCode);
+        setFinalResults(null);
 
         setPage("lobby");
 
@@ -279,6 +313,7 @@ function App() {
       (error, response) => {
 
         if (error) {
+          console.error("Socket.IO request failed:", response);
           alert("Server did not respond. Please try again.");
           return;
         }
@@ -303,6 +338,7 @@ function App() {
         setPlayerName(name);
         setRoom(response.room);
         setRoomCode(response.room.roomCode);
+        setFinalResults(null);
 
         setPage("lobby");
 
@@ -313,28 +349,33 @@ function App() {
 
   // Start game
   const startGame = () => {
+    if (!socket.connected) {
+      alert("Not connected to server. Please wait.");
+      return;
+    }
 
-    socket.timeout(5000).emit(
-      "START_GAME",
-      {},
-      (error, response) => {
-
-        if (error) {
-          alert("Server did not respond.");
-          return;
-        }
-
-        if (!response.success) {
-          alert(response.message);
-        }
-
+    socket.timeout(10000).emit("START_GAME", (error, response) => {
+      if (error) {
+        console.error("START_GAME timeout:", error);
+        alert("Start Game request timed out.");
+        return;
       }
-    );
 
+      if (!response?.success) {
+        alert(response?.message || "Could not start game.");
+        return;
+      }
+
+      console.log("Game started successfully.");
+    });
   };
 
   // Leave room
   const leaveRoom = () => {
+    if (!socket.connected) {
+      alert("Server is disconnected. Please reconnect and try again.");
+      return;
+    }
 
     socket.timeout(5000).emit(
       "LEAVE_ROOM",
@@ -342,34 +383,127 @@ function App() {
       (error, response) => {
 
         if (error) {
-          alert("Server did not respond.");
+          console.error("Leave room timeout:", error);
+          alert("Could not leave the previous room. Please try again.");
           return;
         }
 
-        if (!response.success) {
-          alert(response.message);
+        if (!response?.success) {
+          alert(response?.message || "Could not leave the room.");
           return;
         }
 
-        // Remove saved game session
+        console.log("Successfully left previous room.");
+
         localStorage.removeItem("scribblelan_session");
 
+        setFinalResults(null);
         setRoom(null);
         setRoomCode("");
         setPage("home");
-
       }
     );
-
   };
 
-  const endGame = () => {
+  // const endGame = (results) => {
+  //   if (results) {
+  //     setFinalResults(results);
+  //   }
+
+  //   setPage("results");
+  // };
+
+  // Navigate to results after the game finishes.
+  const viewFinalResults = (results) => {
+    if (results) {
+      setFinalResults(results);
+    }
+
     setPage("results");
   };
 
   const goHome = () => {
-    setPage("home");
+    // setFinalResults(null);
+    // setRoom(null);
+    // setRoomCode("");
+
+    // localStorage.removeItem("scribblelan_session");
+
+    // setPage("home");
+    leaveRoom();
   };
+
+  // Start a rematch in the existing room.
+  // Request a rematch from the existing room.
+  const playAgain = () => {
+    if (!socket.connected) {
+      alert("Server is disconnected.");
+      return;
+    }
+
+    socket.timeout(5000).emit("PLAY_AGAIN", (error, response) => {
+      if (error) {
+        alert("Rematch request timed out.");
+        return;
+      }
+
+      if (!response?.success) {
+        alert(response?.message || "Could not request rematch.");
+        return;
+      }
+
+      setRoom(response.room);
+      setRoomCode(response.room.roomCode);
+      setFinalResults(null);
+      setPage("lobby");
+    });
+  };
+
+  // Accept another player's rematch invitation.
+  const acceptRematch = () => {
+    socket.timeout(5000).emit("ACCEPT_REMATCH", (error, response) => {
+      if (error) {
+        alert("Server did not respond. Please try again.");
+        return;
+      }
+
+      if (!response?.success) {
+        alert(response?.message || "Could not accept rematch.");
+        return;
+      }
+
+      setRematchInvite(null);
+      setFinalResults(null);
+      setRoom(response.room);
+      setRoomCode(response.room.roomCode);
+      setPage("lobby");
+    });
+  };
+
+  // Decline the invitation and leave the existing room.
+  const declineRematch = () => {
+    socket.timeout(5000).emit("DECLINE_REMATCH", (error, response) => {
+      if (error) {
+        alert("Could not leave the room. Please try again.");
+        return;
+      }
+
+      if (!response?.success) {
+        alert(response?.message || "Could not decline rematch.");
+        return;
+      }
+
+      setRematchInvite(null);
+      setFinalResults(null);
+      setRoom(null);
+      setRoomCode("");
+
+      localStorage.removeItem("scribblelan_session");
+
+      setPage("home");
+    });
+  };
+
 
   return (
     <>
@@ -398,13 +532,15 @@ function App() {
         <Game
           playerName={playerName}
           roomCode={roomCode}
-          onEndGame={endGame}
+          onLeaveGame={leaveRoom}
+          onViewResults={viewFinalResults}
         />
       )}
 
       {page === "results" && (
         <Results
-          onPlayAgain={goHome}
+          results={finalResults}
+          onPlayAgain={playAgain}
           onHome={goHome}
         />
       )}
@@ -419,6 +555,39 @@ function App() {
         />
         {connectionStatus}
       </div>
+
+      {rematchInvite && (
+        <div className="rematch-overlay">
+          <div className="rematch-card">
+            <div className="rematch-icon">🎮</div>
+
+            <h2>Rematch Invitation!</h2>
+
+            <p>
+              <strong>{rematchInvite.requesterName}</strong>
+              {" "}wants to play another game with you.
+            </p>
+
+            <p className="rematch-room">
+              Room Code: {rematchInvite.roomCode}
+            </p>
+
+            <button
+              className="primary-btn"
+              onClick={acceptRematch}
+            >
+              Accept Rematch
+            </button>
+
+            <button
+              className="leave-btn"
+              onClick={declineRematch}
+            >
+              Decline
+            </button>
+          </div>
+        </div>
+      )}
 
     </>
   );

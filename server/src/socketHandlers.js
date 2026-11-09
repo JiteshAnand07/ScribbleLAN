@@ -14,6 +14,7 @@ const {
   getPlayer
 } = require("./gameManager");
 
+const gameLogic = require("./gameLogic");
 
 function registerSocketHandlers(io) {
 
@@ -210,51 +211,250 @@ function registerSocketHandlers(io) {
     });
 
     // START GAME
-    socket.on("START_GAME", (data, callback) => {
-
+    socket.on("START_GAME", (callback) => {
       try {
-
         const roomCode = socket.data.roomCode;
         const playerId = socket.data.playerId;
 
         if (!roomCode || !playerId) {
-          throw new Error("You are not in a game room.");
+          if (typeof callback === "function") {
+            callback({
+              success: false,
+              message: "You are not in a room."
+            });
+          }
+          return;
         }
 
-        const room = gameManager.startGame(
-          roomCode,
-          playerId
-        );
+        // Step 1: Validate host and update room status.
+        const result = startGame(roomCode, playerId);
 
-        io.to(roomCode).emit("ROOM_UPDATE", room);
+        if (!result.success) {
+          if (typeof callback === "function") {
+            callback(result);
+          }
+          return;
+        }
 
-        io.to(roomCode).emit("GAME_STARTED", {
-          roomCode,
-          message: "The game is starting!"
-        });
+        // Step 2: Initialise rounds, drawer, word and timer.
+        const gameResult = gameLogic.startGame(io, roomCode);
 
-        console.log(`Game started in room ${roomCode}`);
+        if (!gameResult.success) {
+          if (typeof callback === "function") {
+            callback(gameResult);
+          }
+          return;
+        }
 
+        // Step 3: Get updated room information.
+        const updatedRoom = getPublicRoom(getRoom(roomCode));
+
+        // Step 4: Notify all players.
+        io.to(roomCode).emit("ROOM_UPDATE", updatedRoom);
+        io.to(roomCode).emit("GAME_STARTED");
+
+        // Step 5: Respond to the host.
         if (typeof callback === "function") {
           callback({
             success: true,
-            room
+            room: updatedRoom
           });
         }
 
+        console.log(`Game successfully started in room ${roomCode}`);
+
       } catch (error) {
+        console.error("START_GAME error:", error);
 
         if (typeof callback === "function") {
           callback({
             success: false,
-            message: error.message
+            message: "Unable to start game. Please try again."
+          });
+        }
+      }
+    });
+
+
+    
+    // Return everyone to the same room for a rematch.
+    
+    // Player requests a rematch.
+    socket.on("PLAY_AGAIN", (callback) => {
+      try {
+        const roomCode = socket.data.roomCode;
+        const playerId = socket.data.playerId;
+
+        if (!roomCode || !playerId) {
+          if (typeof callback === "function") {
+            callback({
+              success: false,
+              message: "You are not in a room."
+            });
+          }
+          return;
+        }
+
+        const result = gameLogic.prepareRematch(roomCode, playerId);
+
+        if (!result.success) {
+          if (typeof callback === "function") {
+            callback(result);
+          }
+          return;
+        }
+
+        const room = gameManager.getRoom(roomCode);
+        const requester = gameManager.getPlayer(roomCode, playerId);
+
+        // Send invitation to every other connected player.
+        for (const [id, player] of room.players.entries()) {
+          if (
+            id !== playerId &&
+            player.connected &&
+            player.socketId
+          ) {
+            io.to(player.socketId).emit("REMATCH_REQUEST", {
+              roomCode,
+              requesterId: playerId,
+              requesterName: requester.name
+            });
+          }
+        }
+
+        // Update room information for everyone.
+        io.to(roomCode).emit("ROOM_UPDATE", result.room);
+
+        // Only the requester is moved to the lobby.
+        socket.emit("RETURN_TO_LOBBY", result.room);
+
+        if (typeof callback === "function") {
+          callback({
+            success: true,
+            room: result.room
           });
         }
 
-      }
+      } catch (error) {
+        console.error("PLAY_AGAIN error:", error);
 
+        if (typeof callback === "function") {
+          callback({
+            success: false,
+            message: "Unable to request a rematch."
+          });
+        }
+      }
     });
 
+    // Player accepts the rematch invitation.
+    socket.on("ACCEPT_REMATCH", (callback) => {
+      const roomCode = socket.data.roomCode;
+      const playerId = socket.data.playerId;
+
+      const result = gameLogic.acceptRematch(roomCode, playerId);
+
+      if (!result.success) {
+        if (typeof callback === "function") {
+          callback(result);
+        }
+        return;
+      }
+
+      io.to(roomCode).emit("ROOM_UPDATE", result.room);
+
+      // Move only the accepting player to the existing lobby.
+      socket.emit("RETURN_TO_LOBBY", result.room);
+
+      if (typeof callback === "function") {
+        callback({
+          success: true,
+          room: result.room
+        });
+      }
+    });
+
+    // Player declines the rematch invitation.
+    socket.on("DECLINE_REMATCH", (callback) => {
+      try {
+        const roomCode = socket.data.roomCode;
+        const playerId = socket.data.playerId;
+
+        if (!roomCode || !playerId) {
+          if (typeof callback === "function") {
+            callback({
+              success: false,
+              message: "You are not in a room."
+            });
+          }
+          return;
+        }
+
+        const room = gameManager.getRoom(roomCode);
+        const player = gameManager.getPlayer(roomCode, playerId);
+
+        if (!room || !player) {
+          if (typeof callback === "function") {
+            callback({
+              success: false,
+              message: "Room or player not found."
+            });
+          }
+          return;
+        }
+
+        const playerName = player.name;
+
+        // Remove the declining player from the existing room.
+        gameManager.removePlayer(roomCode, playerId);
+
+        // Disconnect this socket from the room.
+        socket.leave(roomCode);
+
+        delete socket.data.roomCode;
+        delete socket.data.playerId;
+
+        // Retrieve the latest room directly from the room manager.
+        const remainingRoom = gameManager.getRoom(roomCode);
+
+        let publicRoom = null;
+
+        if (remainingRoom) {
+          // The room must remain in the waiting state for the rematch.
+          remainingRoom.status = "waiting";
+
+          publicRoom = gameManager.getPublicRoom(remainingRoom);
+
+          // Send the updated player list to everyone still in the room.
+          io.to(roomCode).emit("ROOM_UPDATE", publicRoom);
+        }
+
+        console.log(
+          `${playerName} declined the rematch and left room ${roomCode}.`
+        );
+
+        if (typeof callback === "function") {
+          callback({
+            success: true,
+            message: "You declined the rematch.",
+            room: publicRoom
+          });
+        }
+
+      } catch (error) {
+        console.error("DECLINE_REMATCH error:", error);
+
+        if (typeof callback === "function") {
+          callback({
+            success: false,
+            message: "Unable to decline the rematch."
+          });
+        }
+      }
+    });
+
+
+    
     
     // Receive a drawing segment and broadcast it to other players.
     socket.on("DRAW_STROKE", (data) => {
@@ -268,6 +468,11 @@ function registerSocketHandlers(io) {
 
       // Only valid players in an active game can draw.
       if (!room || !player || room.status !== "playing") return;
+
+      // Only the selected drawer is allowed to draw.
+      if (!gameLogic.canDraw(roomCode, playerId)) {
+        return;
+      }
 
       const { color, width, tool, points } = data;
 
@@ -319,6 +524,10 @@ function registerSocketHandlers(io) {
       const player = getPlayer(roomCode, playerId);
 
       if (!room || !player || room.status !== "playing") return;
+
+      if (!gameLogic.canDraw(roomCode, playerId)) {
+        return;
+      }
 
       socket.to(roomCode).emit("CANVAS_CLEARED");
     });
@@ -409,6 +618,36 @@ function registerSocketHandlers(io) {
         }
 
     });
+
+    
+    // A player asks for the current game state.
+    socket.on("GET_GAME_STATE", () => {
+      const roomCode = socket.data.roomCode;
+      const playerId = socket.data.playerId;
+
+      if (!roomCode || !playerId) return;
+
+      const state = gameLogic.getPublicState(roomCode);
+
+      if (!state) return;
+
+      socket.emit("GAME_STATE", state);
+
+      // Only the drawer receives the secret word.
+      gameLogic.sendPrivateWord(socket, roomCode, playerId);
+    });
+
+
+    // Receive a guess and let the backend validate it.
+    socket.on("SUBMIT_GUESS", (data, callback) => {
+      const guess = data && data.guess;
+      const result = gameLogic.submitGuess(io, socket, guess);
+
+      if (typeof callback === "function") {
+        callback(result);
+      }
+    });
+
 
 
   });

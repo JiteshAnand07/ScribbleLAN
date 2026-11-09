@@ -9,35 +9,65 @@ function Lobby({
   onStartGame,
   onLeave
 }) {
-
   const isHost = hostId === currentPlayerId;
 
-  const copyRoomCode = async () => {
+  // Check whether this room is currently handling a rematch.
+  const roomHasRematch = players.some(
+    (player) =>
+      player.rematchStatus !== null &&
+      player.rematchStatus !== undefined
+  );
 
+  // Players who have not yet responded to the invitation.
+  const pendingRematchPlayers = players.filter(
+    (player) =>
+      player.connected !== false &&
+      player.rematchStatus === "pending"
+  );
+
+  // Players who have accepted the rematch.
+  const acceptedPlayers = players.filter(
+    (player) =>
+      player.connected !== false &&
+      (
+        player.rematchStatus === "accepted" ||
+        !roomHasRematch
+      )
+  );
+
+  // At least two eligible players must be ready.
+  const canStartGame =
+    pendingRematchPlayers.length === 0 &&
+    acceptedPlayers.length >= 2;
+
+  const connectedPlayers = players.filter(
+    (player) => player.connected !== false
+  ).length;
+
+  const copyRoomCode = async () => {
     try {
       await navigator.clipboard.writeText(roomCode);
       alert("Room code copied!");
     } catch {
       alert("Unable to copy room code.");
     }
-
   };
 
   return (
     <div className="lobby-page">
-
       <div className="lobby-card">
 
         <h1>Game Lobby</h1>
 
         <p className="lobby-subtitle">
           {gameStatus === "waiting"
-            ? "Waiting for players to join..."
+            ? roomHasRematch
+              ? "Waiting for players to join the rematch..."
+              : "Waiting for players to join..."
             : "Game has started!"}
         </p>
 
         <div className="room-code-box">
-
           <span>ROOM CODE</span>
 
           <div className="room-code">
@@ -50,17 +80,14 @@ function Lobby({
           >
             Copy Code
           </button>
-
         </div>
 
         <div className="player-section">
-
           <h3>
             Players ({players.length}/4)
           </h3>
 
           {players.map((player, index) => (
-
             <div className="player-item" key={player.id}>
 
               <div
@@ -78,7 +105,6 @@ function Lobby({
               </div>
 
               <div className="player-info">
-
                 <strong>
                   {player.name}
                   {player.id === currentPlayerId && " (You)"}
@@ -88,6 +114,17 @@ function Lobby({
                   <span>Room Host</span>
                 )}
 
+                {roomHasRematch && (
+                  <span className="rematch-player-status">
+                    {player.rematchStatus === "accepted"
+                      ? "Rematch accepted"
+                      : player.rematchStatus === "pending"
+                        ? "Rematch pending"
+                        : player.rematchStatus === "disconnected"
+                          ? "Disconnected"
+                          : "Joined"}
+                  </span>
+                )}
               </div>
 
               <span
@@ -101,12 +138,24 @@ function Lobby({
               </span>
 
             </div>
-
           ))}
 
           {players.length < 4 && (
             <p className="waiting-message">
               Waiting for {4 - players.length} more player(s)...
+            </p>
+          )}
+
+          {roomHasRematch && pendingRematchPlayers.length > 0 && (
+            <p className="rematch-waiting">
+              Waiting for {pendingRematchPlayers.length}
+              {" "}player(s) to accept or decline...
+            </p>
+          )}
+
+          {roomHasRematch && pendingRematchPlayers.length === 0 && (
+            <p className="rematch-ready">
+              All connected invited players have responded.
             </p>
           )}
 
@@ -118,7 +167,7 @@ function Lobby({
             <button
               className="primary-btn"
               onClick={onStartGame}
-              disabled={players.length < 2}
+              disabled={!canStartGame}
             >
               Start Game
             </button>
@@ -150,7 +199,6 @@ function Lobby({
         </p>
 
       </div>
-
     </div>
   );
 }

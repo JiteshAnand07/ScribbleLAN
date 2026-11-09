@@ -27,20 +27,27 @@ function generateRoomCode() {
 }
 
 // Convert room data into a safe object for clients
+
 function getPublicRoom(room) {
   return {
     roomCode: room.roomCode,
     hostId: room.hostId,
     status: room.status,
+    rematchActive: Boolean(room.rematchActive),
+
     players: Array.from(room.players.values()).map((player) => ({
       id: player.id,
       name: player.name,
       score: player.score,
       isHost: player.isHost,
-      connected: player.connected
+      connected: player.connected,
+      rematchStatus: room.rematchActive
+        ? player.rematchStatus || "pending"
+        : null
     }))
   };
 }
+
 
 // Create a new room
 function createRoom(playerId, playerName, socketId) {
@@ -102,7 +109,8 @@ function joinRoom(roomCode, playerId, playerName, socketId) {
     socketId,
     score: 0,
     isHost: false,
-    connected: true
+    connected: true,
+    rematchStatus: room.rematchActive ? "accepted" : null
   };
 
   room.players.set(playerId, player);
@@ -123,30 +131,77 @@ function findPlayerRoom(playerId) {
 }
 
 // Start the game
-function startGame(roomCode, playerId) {
 
+function startGame(roomCode, playerId) {
   const room = rooms.get(roomCode);
 
   if (!room) {
-    throw new Error("Room does not exist.");
+    return {
+      success: false,
+      message: "Room does not exist."
+    };
   }
 
   if (room.hostId !== playerId) {
-    throw new Error("Only the host can start the game.");
-  }
-
-  if (room.players.size < 2) {
-    throw new Error("At least 2 players are required.");
+    return {
+      success: false,
+      message: "Only the host can start the game."
+    };
   }
 
   if (room.status !== "waiting") {
-    throw new Error("Game has already started.");
+    return {
+      success: false,
+      message: "Game has already started."
+    };
+  }
+
+  const connectedPlayers = Array.from(room.players.values())
+    .filter((player) => player.connected !== false);
+
+  // During a rematch, all connected invited players must respond.
+  if (room.rematchActive) {
+    const pendingPlayers = connectedPlayers.filter(
+      (player) => player.rematchStatus === "pending"
+    );
+
+    if (pendingPlayers.length > 0) {
+      return {
+        success: false,
+        message: "Please wait for all players to accept or decline the rematch."
+      };
+    }
+  }
+
+  const eligiblePlayers = connectedPlayers.filter(
+    (player) =>
+      !room.rematchActive || player.rematchStatus === "accepted"
+  );
+
+  if (eligiblePlayers.length < 2) {
+    return {
+      success: false,
+      message: "At least 2 players must accept the game."
+    };
   }
 
   room.status = "playing";
 
-  return getPublicRoom(room);
+  // Clear rematch information once the new game begins.
+  room.rematchActive = false;
+
+  for (const player of room.players.values()) {
+    player.rematchStatus = null;
+    player.score = 0;
+  }
+
+  return {
+    success: true,
+    room: getPublicRoom(room)
+  };
 }
+
+
 
 // Remove a player from a room
 function removePlayer(roomCode, playerId) {
@@ -201,7 +256,7 @@ function getRoom(roomCode) {
 
   if (!room) return null;
 
-  return getPublicRoom(room);
+  return room;
 }
 
 // Get the internal player information

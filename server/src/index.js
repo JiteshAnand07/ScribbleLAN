@@ -24,7 +24,11 @@ const io = new Server(httpServer, {
   cors: {
     origin: true,
     methods: ["GET", "POST"]
-  }
+  },
+
+  // Socket.IO heartbeat configuration
+  pingInterval: 25000,
+  pingTimeout: 60000
 });
 
 // Health check
