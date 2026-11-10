@@ -9,40 +9,42 @@ function Lobby({
   onStartGame,
   onLeave
 }) {
+  // Safely handle either an array or a room object.
+  const playerList = Array.isArray(players)
+    ? players
+    : Array.isArray(players?.players)
+      ? players.players
+      : [];
+
   const isHost = hostId === currentPlayerId;
 
-  // Check whether this room is currently handling a rematch.
-  const roomHasRematch = players.some(
+  // Detect whether the room is handling a rematch.
+  const roomHasRematch = playerList.some(
     (player) =>
       player.rematchStatus !== null &&
       player.rematchStatus !== undefined
   );
 
-  // Players who have not yet responded to the invitation.
-  const pendingRematchPlayers = players.filter(
+  // Players who have not responded to the rematch.
+  const pendingRematchPlayers = playerList.filter(
     (player) =>
       player.connected !== false &&
       player.rematchStatus === "pending"
   );
 
-  // Players who have accepted the rematch.
-  const acceptedPlayers = players.filter(
+  // Players eligible to participate in the game.
+  const acceptedPlayers = playerList.filter(
     (player) =>
       player.connected !== false &&
       (
-        player.rematchStatus === "accepted" ||
-        !roomHasRematch
+        !roomHasRematch ||
+        player.rematchStatus === "accepted"
       )
   );
 
-  // At least two eligible players must be ready.
   const canStartGame =
     pendingRematchPlayers.length === 0 &&
     acceptedPlayers.length >= 2;
-
-  const connectedPlayers = players.filter(
-    (player) => player.connected !== false
-  ).length;
 
   const copyRoomCode = async () => {
     try {
@@ -62,7 +64,7 @@ function Lobby({
         <p className="lobby-subtitle">
           {gameStatus === "waiting"
             ? roomHasRematch
-              ? "Waiting for players to join the rematch..."
+              ? "Waiting for rematch players..."
               : "Waiting for players to join..."
             : "Game has started!"}
         </p>
@@ -83,66 +85,73 @@ function Lobby({
         </div>
 
         <div className="player-section">
+
           <h3>
-            Players ({players.length}/4)
+            Players ({playerList.length}/4)
           </h3>
 
-          {players.map((player, index) => (
-            <div className="player-item" key={player.id}>
+          {playerList.map((player, index) => {
+            const isOnline = player.connected !== false;
 
-              <div
-                className="player-avatar"
-                style={{
-                  background: [
-                    "#2563eb",
-                    "#e879a0",
-                    "#16a34a",
-                    "#9333ea"
-                  ][index % 4]
-                }}
-              >
-                {player.name.charAt(0).toUpperCase()}
+            return (
+              <div className="player-item" key={player.id}>
+
+                <div
+                  className="player-avatar"
+                  style={{
+                    background: [
+                      "#2563eb",
+                      "#e879a0",
+                      "#16a34a",
+                      "#9333ea"
+                    ][index % 4]
+                  }}
+                >
+                  {(player.name || "?").charAt(0).toUpperCase()}
+                </div>
+
+                <div className="player-info">
+
+                  <strong>
+                    {player.name || "Unknown Player"}
+                    {player.id === currentPlayerId && " (You)"}
+                  </strong>
+
+                  {player.isHost && (
+                    <span>Room Host</span>
+                  )}
+
+                  {roomHasRematch && (
+                    <span className="rematch-player-status">
+                      {player.rematchStatus === "accepted"
+                        ? "Rematch accepted"
+                        : player.rematchStatus === "pending"
+                          ? "Rematch pending"
+                          : player.rematchStatus === "disconnected"
+                            ? "Disconnected"
+                            : "Joined"}
+                    </span>
+                  )}
+
+                </div>
+
+                <span
+                  className={
+                    isOnline
+                      ? "online-status"
+                      : "offline-status"
+                  }
+                >
+                  ● {isOnline ? "Online" : "Offline"}
+                </span>
+
               </div>
+            );
+          })}
 
-              <div className="player-info">
-                <strong>
-                  {player.name}
-                  {player.id === currentPlayerId && " (You)"}
-                </strong>
-
-                {player.isHost && (
-                  <span>Room Host</span>
-                )}
-
-                {roomHasRematch && (
-                  <span className="rematch-player-status">
-                    {player.rematchStatus === "accepted"
-                      ? "Rematch accepted"
-                      : player.rematchStatus === "pending"
-                        ? "Rematch pending"
-                        : player.rematchStatus === "disconnected"
-                          ? "Disconnected"
-                          : "Joined"}
-                  </span>
-                )}
-              </div>
-
-              <span
-                className={
-                  player.connected
-                    ? "online-status"
-                    : "offline-status"
-                }
-              >
-                ● {player.connected ? "Online" : "Offline"}
-              </span>
-
-            </div>
-          ))}
-
-          {players.length < 4 && (
+          {!roomHasRematch && playerList.length < 4 && (
             <p className="waiting-message">
-              Waiting for {4 - players.length} more player(s)...
+              Room has space for {4 - playerList.length} more player(s).
             </p>
           )}
 
@@ -153,11 +162,21 @@ function Lobby({
             </p>
           )}
 
-          {roomHasRematch && pendingRematchPlayers.length === 0 && (
-            <p className="rematch-ready">
-              All connected invited players have responded.
-            </p>
-          )}
+          {roomHasRematch &&
+            pendingRematchPlayers.length === 0 &&
+            acceptedPlayers.length >= 2 && (
+              <p className="rematch-ready">
+                Players are ready for the rematch!
+              </p>
+            )}
+
+          {roomHasRematch &&
+            pendingRematchPlayers.length === 0 &&
+            acceptedPlayers.length < 2 && (
+              <p className="rematch-waiting">
+                Waiting for at least one more player to join...
+              </p>
+            )}
 
         </div>
 

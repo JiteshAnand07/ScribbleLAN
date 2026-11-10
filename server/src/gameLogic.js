@@ -346,6 +346,8 @@ function startNextRound(io, roomCode) {
   session.category = selected.category;
   session.guessedPlayers = new Set();
   session.phase = "playing";
+  // Remove all previous round drawings.
+  session.drawingHistory = [];
   session.endsAt = Date.now() + ROUND_DURATION * 1000;
 
   // Start each round with a clean canvas.
@@ -412,7 +414,8 @@ function startGame(io, roomCode) {
     phase: "playing",
     endsAt: null,
     timer: null,
-    nextRoundTimer: null
+    nextRoundTimer: null,
+    drawingHistory: []
   };
 
   sessions.set(roomCode, session);
@@ -511,6 +514,80 @@ function submitGuess(io, socket, rawGuess) {
   return { success: true, correct: false };
 }
 
+
+const MAX_DRAWING_SEGMENTS = 20000;
+
+// Save a drawing segment in the active game session.
+function recordDrawingSegment(roomCode, playerId, stroke) {
+  const session = sessions.get(roomCode);
+
+  if (
+    !session ||
+    session.phase !== "playing" ||
+    session.currentDrawerId !== playerId
+  ) {
+    return false;
+  }
+
+  if (!Array.isArray(session.drawingHistory)) {
+    session.drawingHistory = [];
+  }
+
+  // Prevent unlimited drawing-history growth.
+  if (session.drawingHistory.length >= MAX_DRAWING_SEGMENTS) {
+    return false;
+  }
+
+  session.drawingHistory.push({
+    color: stroke.color,
+    width: stroke.width,
+    tool: stroke.tool,
+    points: stroke.points.map((point) => ({
+      x: point.x,
+      y: point.y
+    }))
+  });
+
+  return true;
+}
+
+// Return a safe copy of the saved drawing history.
+function getDrawingHistory(roomCode) {
+  const session = sessions.get(roomCode);
+
+  if (!session) {
+    return [];
+  }
+
+  return session.drawingHistory.map((stroke) => ({
+    color: stroke.color,
+    width: stroke.width,
+    tool: stroke.tool,
+    points: stroke.points.map((point) => ({
+      x: point.x,
+      y: point.y
+    }))
+  }));
+}
+
+// Clear saved history when the drawer clears the canvas.
+function clearDrawingHistory(roomCode, playerId) {
+  const session = sessions.get(roomCode);
+
+  if (
+    !session ||
+    session.phase !== "playing" ||
+    session.currentDrawerId !== playerId
+  ) {
+    return false;
+  }
+
+  session.drawingHistory = [];
+
+  return true;
+}
+
+
 module.exports = {
   startGame,
   canDraw,
@@ -518,5 +595,9 @@ module.exports = {
   getPublicState,
   sendPrivateWord,
   prepareRematch,
-  acceptRematch
+  acceptRematch,
+  recordDrawingSegment,
+  getDrawingHistory,
+  clearDrawingHistory
 };
+

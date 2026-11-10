@@ -123,12 +123,44 @@ function App() {
             setRoomCode(restoredRoom.roomCode);
             setRoom(restoredRoom);
 
-            // Restore the appropriate screen
-            setPage(
-              restoredRoom.status === "playing"
-                ? "game"
-                : "lobby"
+            // Restore the previous game results from localStorage.
+            let savedResults = null;
+
+            try {
+              savedResults = JSON.parse(
+                localStorage.getItem("scribblelan_final_results") || "null"
+              );
+            } catch (error) {
+              console.error("Unable to restore final results:", error);
+            }
+
+            const savedView = localStorage.getItem(
+              "scribblelan_current_view"
             );
+
+            // Restore the correct screen based on server game status.
+            if (restoredRoom.status === "finished") {
+
+              setFinalResults(savedResults);
+
+              if (savedView === "results") {
+                setPage("results");
+              } else {
+                // Restore the Game page with its finished-game popup.
+                setPage("game");
+              }
+
+            } else if (restoredRoom.status === "playing") {
+
+              setFinalResults(null);
+              setPage("game");
+
+            } else {
+
+              setFinalResults(null);
+              setPage("lobby");
+
+            }
 
           }
         );
@@ -167,6 +199,10 @@ function App() {
     };
 
     const handleGameStarted = () => {
+      localStorage.setItem("scribblelan_current_view", "game");
+      localStorage.removeItem("scribblelan_final_results");
+
+      setFinalResults(null);
       setPage("game");
     };
 
@@ -176,12 +212,16 @@ function App() {
     };
 
     const handleReturnToLobby = (updatedRoom) => {
-      console.log("Returning to existing lobby:", updatedRoom.roomCode);
+      console.log("Returning to existing room:", updatedRoom.roomCode);
 
       setRematchInvite(null);
       setFinalResults(null);
       setRoom(updatedRoom);
       setRoomCode(updatedRoom.roomCode);
+
+      localStorage.removeItem("scribblelan_final_results");
+      localStorage.setItem("scribblelan_current_view", "lobby");
+
       setPage("lobby");
     };
 
@@ -191,7 +231,20 @@ function App() {
 
     const handleGameFinished = (results) => {
       console.log("Final game results received:", results);
+
       setFinalResults(results);
+
+      // Save results so they survive browser refresh.
+      localStorage.setItem(
+        "scribblelan_final_results",
+        JSON.stringify(results)
+      );
+
+      // The user is currently seeing the Game Finished popup.
+      localStorage.setItem(
+        "scribblelan_current_view",
+        "game"
+      );
     };
 
     socket.on("connect", handleConnect);
@@ -273,10 +326,9 @@ function App() {
           roomCode: response.room.roomCode
         };
 
-        localStorage.setItem(
-          "scribblelan_session",
-          JSON.stringify(session)
-        );
+        localStorage.setItem("scribblelan_session", JSON.stringify(session));
+        localStorage.setItem("scribblelan_current_view", "lobby");
+        localStorage.removeItem("scribblelan_final_results");
 
         setPlayerName(name);
         setRoom(response.room);
@@ -330,10 +382,9 @@ function App() {
           roomCode: response.room.roomCode
         };
 
-        localStorage.setItem(
-          "scribblelan_session",
-          JSON.stringify(session)
-        );
+        localStorage.setItem("scribblelan_session", JSON.stringify(session));
+        localStorage.setItem("scribblelan_current_view", "lobby");
+        localStorage.removeItem("scribblelan_final_results");
 
         setPlayerName(name);
         setRoom(response.room);
@@ -396,6 +447,8 @@ function App() {
         console.log("Successfully left previous room.");
 
         localStorage.removeItem("scribblelan_session");
+        localStorage.removeItem("scribblelan_current_view");
+        localStorage.removeItem("scribblelan_final_results");
 
         setFinalResults(null);
         setRoom(null);
@@ -417,7 +470,14 @@ function App() {
   const viewFinalResults = (results) => {
     if (results) {
       setFinalResults(results);
+
+      localStorage.setItem(
+        "scribblelan_final_results",
+        JSON.stringify(results)
+      );
     }
+
+    localStorage.setItem("scribblelan_current_view", "results");
 
     setPage("results");
   };
@@ -451,6 +511,9 @@ function App() {
         alert(response?.message || "Could not request rematch.");
         return;
       }
+
+      localStorage.removeItem("scribblelan_final_results");
+      localStorage.setItem("scribblelan_current_view", "lobby");
 
       setRoom(response.room);
       setRoomCode(response.room.roomCode);
@@ -534,6 +597,7 @@ function App() {
           roomCode={roomCode}
           onLeaveGame={leaveRoom}
           onViewResults={viewFinalResults}
+          initialGameResult={finalResults}
         />
       )}
 

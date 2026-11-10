@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import DrawingCanvas from "./DrawingCanvas";
 import { socket } from "../socket";
 
-function Game({ playerName, roomCode, onLeaveGame, onViewResults}) {
+function Game({ playerName, roomCode, onLeaveGame, onViewResults, initialGameResult = null}) {
   const [gameState, setGameState] = useState(null);
   const [secretWord, setSecretWord] = useState("");
   const [guess, setGuess] = useState("");
@@ -11,11 +11,19 @@ function Game({ playerName, roomCode, onLeaveGame, onViewResults}) {
   const [remoteStrokes, setRemoteStrokes] = useState([]);
   const [clearSignal, setClearSignal] = useState(0);
   const [roundResult, setRoundResult] = useState(null);
-  const [gameResult, setGameResult] = useState(null);
+  const [gameResult, setGameResult] = useState(initialGameResult);
   const [guessError, setGuessError] = useState("");
   const currentRoundRef = useRef(null);
   // The player ID is already stored when joining or creating a room.
   const currentPlayerId = localStorage.getItem("scribblelan_player_id");
+
+
+  // Restore the final popup after refreshing the browser.
+  useEffect(() => {
+    if (initialGameResult) {
+      setGameResult(initialGameResult);
+    }
+  }, [initialGameResult]);
 
   useEffect(() => {
     const handleGameState = (state) => {
@@ -65,6 +73,26 @@ function Game({ playerName, roomCode, onLeaveGame, onViewResults}) {
         setGuess("");
     };
 
+    const requestDrawingState = () => {
+      if (!socket.connected) return;
+
+      socket.emit("GET_DRAWING_STATE", (response) => {
+        if (!response?.success || !Array.isArray(response.strokes)) {
+          console.error(
+            "Unable to restore drawing:",
+            response?.message
+          );
+          return;
+        }
+
+        console.log(
+          `Restored ${response.strokes.length} drawing segments.`
+        );
+
+        setRemoteStrokes(response.strokes);
+      });
+    };
+
     socket.on("GAME_STATE", handleGameState);
     socket.on("YOUR_WORD", handleYourWord);
     socket.on("DRAW_STROKE", handleRemoteStroke);
@@ -72,11 +100,13 @@ function Game({ playerName, roomCode, onLeaveGame, onViewResults}) {
     socket.on("GUESS_MESSAGE", handleGuessMessage);
     socket.on("ROUND_ENDED", handleRoundEnded);
     socket.on("GAME_FINISHED", handleGameFinished);
+    socket.on("connect", requestDrawingState);
 
     // Request the current game state when this screen opens.
     // Request game state and secret word after registering listeners.
     if (socket.connected) {
         socket.emit("GET_GAME_STATE");
+        requestDrawingState();
         // socket.emit("REQUEST_WORD");
     }
 
@@ -88,6 +118,7 @@ function Game({ playerName, roomCode, onLeaveGame, onViewResults}) {
       socket.off("GUESS_MESSAGE", handleGuessMessage);
       socket.off("ROUND_ENDED", handleRoundEnded);
       socket.off("GAME_FINISHED", handleGameFinished);
+      socket.off("connect", requestDrawingState);
     };
   }, []);
 

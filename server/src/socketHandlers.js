@@ -141,73 +141,80 @@ function registerSocketHandlers(io) {
     
     // RESUME ROOM AFTER BROWSER REFRESH
     socket.on("RESUME_ROOM", (data, callback) => {
-
-    try {
-
+      try {
         const { playerId, roomCode } = data || {};
 
         if (!playerId || !roomCode) {
-        throw new Error("Invalid reconnection information.");
+          throw new Error("Invalid reconnection information.");
         }
 
         const room = gameManager.getRoom(roomCode);
 
         if (!room) {
-        throw new Error("Game room no longer exists.");
+          throw new Error("Game room no longer exists.");
         }
 
-        const player = gameManager.getPlayer(
-        roomCode,
-        playerId
-        );
+        const player = gameManager.getPlayer(roomCode, playerId);
 
         if (!player) {
-        throw new Error("Player is not registered in this room.");
+          throw new Error("Player is not registered in this room.");
         }
 
-        // Restore the player's new Socket.IO connection
-        gameManager.updatePlayerSocket(
-        roomCode,
-        playerId,
-        socket.id
+        // Restore the player's new Socket.IO connection.
+        const restored = gameManager.updatePlayerSocket(
+          roomCode,
+          playerId,
+          socket.id
         );
 
-        // Join the existing Socket.IO room
+        if (!restored) {
+          throw new Error("Unable to restore player connection.");
+        }
+
+        // Join the existing Socket.IO room.
         socket.join(roomCode);
 
-        // Restore connection information
+        // Restore the socket's player information.
         socket.data.playerId = playerId;
         socket.data.roomCode = roomCode;
 
-        // Get updated room information
-        const updatedRoom = gameManager.getRoom(roomCode);
+        // IMPORTANT: Convert the internal room Map into a public array.
+        const publicRoom = gameManager.getPublicRoom(room);
 
         console.log(
-        `${player.name} reconnected to room ${roomCode}`
+          `${player.name} reconnected to room ${roomCode}`
         );
 
-        // Notify all players
-        io.to(roomCode).emit("ROOM_UPDATE", updatedRoom);
+        console.log(
+          "Restored room players:",
+          publicRoom.players.map((p) => ({
+            name: p.name,
+            connected: p.connected
+          }))
+        );
 
+        // Notify all players with the correctly formatted room.
+        io.to(roomCode).emit("ROOM_UPDATE", publicRoom);
+
+        // Return the same public room structure to the reconnecting player.
         if (typeof callback === "function") {
-        callback({
+          callback({
             success: true,
-            room: updatedRoom,
+            room: publicRoom,
             playerName: player.name
-        });
+          });
         }
 
-    } catch (error) {
+      } catch (error) {
+        console.error("RESUME_ROOM error:", error.message);
 
         if (typeof callback === "function") {
-        callback({
+          callback({
             success: false,
             message: error.message
-        });
+          });
         }
-
-    }
-
+      }
     });
 
     // START GAME
@@ -504,6 +511,22 @@ function registerSocketHandlers(io) {
 
       if (!validPoints) return;
 
+      // Save the segment so it can be restored after reconnection.
+      const saved = gameLogic.recordDrawingSegment(
+        roomCode,
+        playerId,
+        {
+          color,
+          width,
+          tool,
+          points
+        }
+      );
+
+      if (!saved) {
+        return;
+      }
+
       // Send to everyone in the room except the sender.
       socket.to(roomCode).emit("DRAW_STROKE", {
         color,
@@ -526,6 +549,12 @@ function registerSocketHandlers(io) {
       if (!room || !player || room.status !== "playing") return;
 
       if (!gameLogic.canDraw(roomCode, playerId)) {
+        return;
+      }
+
+      const cleared = gameLogic.clearDrawingHistory(roomCode, playerId);
+
+      if (!cleared) {
         return;
       }
 
@@ -647,6 +676,66 @@ function registerSocketHandlers(io) {
         callback(result);
       }
     });
+
+
+    
+    // Send saved drawing history to a player who has reconnected.
+    socket.on("GET_DRAWING_STATE", (callback) => {
+      try {
+        const roomCode = socket.data.roomCode;
+        const playerId = socket.data.playerId;
+
+        if (!roomCode || !playerId) {
+          if (typeof callback === "function") {
+            callback({
+              success: false,
+              message: "Player is not in a room.",
+              strokes: []
+            });
+          }
+          return;
+        }
+
+        const room = gameManager.getRoom(roomCode);
+        const player = gameManager.getPlayer(roomCode, playerId);
+
+        if (!room || !player || player.socketId !== socket.id) {
+          if (typeof callback === "function") {
+            callback({
+              success: false,
+              message: "Invalid player connection.",
+              strokes: []
+            });
+          }
+          return;
+        }
+
+        const strokes = gameLogic.getDrawingHistory(roomCode);
+
+        console.log(
+          `Sending ${strokes.length} saved drawing segments to ${player.name}.`
+        );
+
+        if (typeof callback === "function") {
+          callback({
+            success: true,
+            strokes
+          });
+        }
+
+      } catch (error) {
+        console.error("GET_DRAWING_STATE error:", error);
+
+        if (typeof callback === "function") {
+          callback({
+            success: false,
+            message: "Unable to restore drawing.",
+            strokes: []
+          });
+        }
+      }
+    });
+
 
 
 
