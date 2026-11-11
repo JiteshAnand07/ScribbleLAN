@@ -16,6 +16,13 @@ const {
 
 const gameLogic = require("./gameLogic");
 
+const networkMetrics = {
+  drawingBatchesReceived: 0,
+  drawingSegmentsReceived: 0,
+  drawingBytesReceived: 0,
+  latencyRequests: 0
+};
+
 function registerSocketHandlers(io) {
 
   io.on("connection", (socket) => {
@@ -536,6 +543,102 @@ function registerSocketHandlers(io) {
       });
     });
 
+
+    
+    // Receive multiple drawing segments in a single event.
+    socket.on("DRAW_STROKE_BATCH", (data) => {
+      const roomCode = socket.data.roomCode;
+      const playerId = socket.data.playerId;
+
+      if (!roomCode || !playerId || !data) return;
+
+      const room = gameManager.getRoom(roomCode);
+      const player = gameManager.getPlayer(roomCode, playerId);
+
+      if (!room || !player || room.status !== "playing") {
+        return;
+      }
+
+      // Verify that the sender is the selected drawer.
+      if (!gameLogic.canDraw(roomCode, playerId)) {
+        return;
+      }
+
+      const strokes = data.strokes;
+
+      // Limit the number of segments in one network event.
+      if (
+        !Array.isArray(strokes) ||
+        strokes.length < 1 ||
+        strokes.length > 20
+      ) {
+        return;
+      }
+
+      // Validate every segment before saving or broadcasting.
+      const validBatch = strokes.every((stroke) => {
+        if (
+          !stroke ||
+          typeof stroke.color !== "string" ||
+          !/^#[0-9a-fA-F]{6}$/.test(stroke.color) ||
+          !Number.isFinite(stroke.width) ||
+          stroke.width < 1 ||
+          stroke.width > 30 ||
+          !["brush", "eraser"].includes(stroke.tool) ||
+          !Array.isArray(stroke.points) ||
+          stroke.points.length < 1 ||
+          stroke.points.length > 2
+        ) {
+          return false;
+        }
+
+        return stroke.points.every(
+          (point) =>
+            point &&
+            Number.isFinite(point.x) &&
+            Number.isFinite(point.y) &&
+            point.x >= 0 &&
+            point.x <= 1 &&
+            point.y >= 0 &&
+            point.y <= 1
+        );
+      });
+
+      if (!validBatch) return;
+
+      // Save the drawing segments for recovery after refresh.
+      const saved = gameLogic.recordDrawingBatch(
+        roomCode,
+        playerId,
+        strokes
+      );
+
+      if (!saved) return;
+
+      // Record server-side network statistics.
+      networkMetrics.drawingBatchesReceived += 1;
+
+      networkMetrics.drawingSegmentsReceived += strokes.length;
+
+      networkMetrics.drawingBytesReceived += Buffer.byteLength(
+        JSON.stringify(data),
+        "utf8"
+      );
+
+      // Send the batch to everyone except the drawer.
+      socket.to(roomCode).emit("DRAW_STROKE_BATCH", {
+        strokes
+      });
+
+      // Print an aggregate report every 20 batches.
+      if (networkMetrics.drawingBatchesReceived % 20 === 0) {
+        console.log("\n========== NETWORK METRICS ==========");
+        console.log(networkMetrics);
+        console.log("=====================================\n");
+      }
+    });
+
+
     // Clear the canvas for everyone in the room.
     socket.on("CLEAR_CANVAS", () => {
       const roomCode = socket.data.roomCode;
@@ -734,6 +837,27 @@ function registerSocketHandlers(io) {
           });
         }
       }
+    });
+
+    // Respond to a network latency measurement request.
+    socket.on("MEASURE_LATENCY", (callback) => {
+      networkMetrics.latencyRequests += 1;
+
+      if (typeof callback === "function") {
+        callback({
+          success: true,
+          serverTimestamp: Date.now()
+        });
+      }
+    });
+
+    socket.on("GET_NETWORK_METRICS", (callback) => {
+      if (typeof callback !== "function") return;
+
+      callback({
+        success: true,
+        ...networkMetrics
+      });
     });
 
 

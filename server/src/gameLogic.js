@@ -551,6 +551,48 @@ function recordDrawingSegment(roomCode, playerId, stroke) {
   return true;
 }
 
+
+function recordDrawingBatch(roomCode, playerId, strokes) {
+  const session = sessions.get(roomCode);
+
+  if (
+    !session ||
+    session.phase !== "playing" ||
+    session.currentDrawerId !== playerId
+  ) {
+    return false;
+  }
+
+  if (!Array.isArray(session.drawingHistory)) {
+    session.drawingHistory = [];
+  }
+
+  const MAX_DRAWING_SEGMENTS = 20000;
+
+  if (
+    session.drawingHistory.length + strokes.length >
+    MAX_DRAWING_SEGMENTS
+  ) {
+    return false;
+  }
+
+  // Save every individual segment for future drawing recovery.
+  for (const stroke of strokes) {
+    session.drawingHistory.push({
+      color: stroke.color,
+      width: stroke.width,
+      tool: stroke.tool,
+      points: stroke.points.map((point) => ({
+        x: point.x,
+        y: point.y
+      }))
+    });
+  }
+
+  return true;
+}
+
+
 // Return a safe copy of the saved drawing history.
 function getDrawingHistory(roomCode) {
   const session = sessions.get(roomCode);
@@ -597,6 +639,7 @@ module.exports = {
   prepareRematch,
   acceptRematch,
   recordDrawingSegment,
+  recordDrawingBatch,
   getDrawingHistory,
   clearDrawingHistory
 };

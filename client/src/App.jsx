@@ -88,6 +88,7 @@ function App() {
       try {
 
         const session = JSON.parse(savedSession);
+        const recoveryStartedAt = performance.now();
 
         // Request restoration of the previous room
         socket.timeout(5000).emit(
@@ -115,6 +116,19 @@ function App() {
             }
 
             console.log("Previous room restored!");
+
+            const recoveryTime = Math.round(
+              performance.now() - recoveryStartedAt
+            );
+
+            console.log(
+              `[NETWORK PERFORMANCE] Room recovery completed in ${recoveryTime} ms`
+            );
+
+            localStorage.setItem(
+              "scribblelan_last_recovery_ms",
+              String(recoveryTime)
+            );
 
             const restoredRoom = response.room;
 
@@ -198,13 +212,31 @@ function App() {
       }
     };
 
+    
     const handleGameStarted = () => {
+      // Clear statistics from the previous game.
+      try {
+        const savedSession = JSON.parse(
+          localStorage.getItem("scribblelan_session") || "null"
+        );
+
+        if (savedSession?.roomCode && savedSession?.playerId) {
+          const key =
+            `scribblelan_metrics_${savedSession.roomCode}_${savedSession.playerId}`;
+
+          sessionStorage.removeItem(key);
+        }
+      } catch (error) {
+        console.error("Could not reset previous game statistics:", error);
+      }
+
       localStorage.setItem("scribblelan_current_view", "game");
       localStorage.removeItem("scribblelan_final_results");
 
       setFinalResults(null);
       setPage("game");
     };
+
 
     const handleRematchRequest = (request) => {
       console.log("Rematch invitation received:", request);
